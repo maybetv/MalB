@@ -1,5 +1,6 @@
 from flask import Flask, Response, request
 import requests
+import re
 
 app = Flask(__name__)
 
@@ -12,34 +13,46 @@ def get_playlist():
         res = requests.get(PLAYLIST_URL)
         playlist_text = res.text
         
-        # ബിഗ് ബോസ് മലയാളം സെക്ഷൻ മാത്രം കണ്ടെത്തി എക്സ്ട്രാക്ട് ചെയ്യുന്നു
+        target_url = None
+        cookie_value = None
+        logo_url = ""
+        
         lines = playlist_text.split('\n')
-        extracted_block = []
-        capture = False
-        
-        for line in lines:
+        for i, line in enumerate(lines):
             if 'Bigboss 24/7 live-MALAYALAM' in line:
-                capture = True
-            if capture:
-                extracted_block.append(line)
-                # ലിങ്ക് അവസാനിക്കുന്ന ഭാഗം വരെ എടുക്കുന്നു
-                if line.startswith('https://') and '|cookie=' in line:
-                    break
+                # ലോഗോ എടുക്കുന്നു
+                if 'tvg-logo="' in line:
+                    logo_match = re.search(r'tvg-logo="([^"]+)"', line)
+                    if logo_match:
+                        logo_url = logo_match.group(1)
+                
+                # ലിങ്കും കുക്കിയും കണ്ടെത്തുന്നു
+                for j in range(i, min(i + 15, len(lines))):
+                    if '.m3u8' in lines[j] and 'http' in lines[j]:
+                        target_url = lines[j].split('|')[0].strip()
+                    if 'hdntl=' in lines[j]:
+                        match = re.search(r'(hdntl=[^&\s"]+)', lines[j])
+                        if match:
+                            cookie_value = match.group(1)
+                break
         
-        if not extracted_block:
-            return "Stream pattern not found", 404
-            
-        # പ്രോപ്പർ M3U ഫോർമാറ്റ് തയ്യാറാക്കുന്നു
-        final_m3u = "#EXTM3U\n" + "\n".join(extracted_block)
+        if not target_url or not cookie_value:
+            return "Stream not found", 404
+
+        # IPTV പ്ലെയറുകൾക്ക് (TiviMate, VLC) കറക്റ്റ് ആയി സപ്പോർട്ട് ചെയ്യുന്ന M3U ഫോർമാറ്റ്
+        m3u_content = f"""#EXTM3U
+#EXTINF:-1 tvg-name="Bigboss 24/7 live-MALAYALAM" tvg-logo="{logo_url}" group-title="Entertainment",Bigboss 24/7 live-MALAYALAM
+#EXTVLCOPT:http-user-agent=Hotstar;in.startv.hotstar/25.02.24.8.11169@Premium Plugx(Android/15)
+#EXTVLCOPT:http-referrer=https://www.hotstar.com/
+#EXTVLCOPT:http-extra-headers=Origin: https://www.hotstar.com
+#EXTVLCOPT:http-cookie={cookie_value}
+{target_url}|cookie={cookie_value}&referer=https://www.hotstar.com/&origin=https://www.hotstar.com&user-agent=Hotstar;in.startv.hotstar/25.02.24.8.11169@Premium Plugx(Android/15)
+"""
         
-        return Response(final_m3u, content_type='audio/x-mpegurl')
+        return Response(m3u_content, content_type='audio/x-mpegurl')
         
     except Exception as e:
         return str(e), 500
-
-@app.route('/')
-def home():
-    return "M3U Generator is Live!"
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
