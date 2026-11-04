@@ -1,4 +1,4 @@
-from flask import Flask, redirect, request
+from flask import Flask, Response, request
 import requests
 import re
 
@@ -9,7 +9,6 @@ PLAYLIST_URL = "https://premiumplugx.com/htt/hot.php?playlist=1"
 @app.route('/stream.m3u8')
 def proxy_stream():
     try:
-        # പ്ലേലിസ്റ്റ് ഡാറ്റ ഫെച്ച് ചെയ്യുന്നു
         res = requests.get(PLAYLIST_URL)
         playlist_text = res.text
         
@@ -29,14 +28,22 @@ def proxy_stream():
                 break
         
         if not target_url or not cookie_value:
-            return "Stream not found in playlist", 404
+            return "Stream not found", 404
 
-        # പ്ലെയർ സപ്പോർട്ട് ചെയ്യുന്ന രീതിയിൽ ഒറിജിനൽ കുക്കിയും പൈപ്പും ചേർത്ത് ലിങ്ക് തയ്യാറാക്കുന്നു
-        final_redirect_url = f"{target_url}|cookie={cookie_value}&referer=https://www.hotstar.com/&origin=https://www.hotstar.com"
+        headers = {
+            'User-Agent': 'Hotstar;in.startv.hotstar/25.02.24.8.11169@Premium Plugx(Android/15)',
+            'Referer': 'https://www.hotstar.com/',
+            'Origin': 'https://www.hotstar.com',
+            'Cookie': cookie_value
+        }
         
-        # പ്രോ ഡെവലപ്പർ വേ: ഡയറക്ട് റീഡയറക്ട് (HTTP 302) വഴി പ്ലെയറിനെ ഹോട്ട്സ്റ്റാറിലേക്ക് കണക്റ്റ് ചെയ്യുന്നു
-        return redirect(final_redirect_url, code=302)
+        # ഹോട്ട്സ്റ്റാർ സ്ട്രീം ഡാറ്റ നേരിട്ട് വാങ്ങി പ്ലെയറിലേക്ക് പാസ് ചെയ്യുന്നു
+        resp = requests.get(target_url, headers=headers, stream=True)
         
+        return Response(
+            resp.iter_content(chunk_size=1024),
+            content_type=resp.headers.get('content-type', 'application/vnd.apple.mpegurl')
+        )
     except Exception as e:
         return str(e), 500
 
