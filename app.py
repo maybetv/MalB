@@ -1,23 +1,44 @@
 from flask import Flask, Response, request
 import requests
+import re
 
 app = Flask(__name__)
 
-# നിങ്ങൾ തന്ന പുതിയ പ്ലേലിസ്റ്റ് ലിങ്ക്
+# നിങ്ങൾ തന്ന പ്ലേലിസ്റ്റ് സോഴ്സ് ലിങ്ക്
 PLAYLIST_URL = "https://premiumplugx.com/htt/hot.php?playlist=1"
 
 @app.route('/stream.m3u8')
 def proxy_stream():
     try:
-        # പ്ലേലിസ്റ്റിൽ നിന്ന് ഡാറ്റ എടുക്കുന്നു (ഇവിടെ ബിഗ് ബോസ് പോലുള്ള ചാനൽ ലിങ്കുകൾ ഫെച്ച് ചെയ്യാം)
+        # പ്ലേലിസ്റ്റ് ഡാറ്റ ഡൗൺലോഡ് ചെയ്യുന്നു
         res = requests.get(PLAYLIST_URL)
-        playlist_data = res.text
+        playlist_text = res.text
         
-        # ഉദാഹരണത്തിന് ആദ്യത്തെ .m3u8 ലിങ്കും അതിന്റെ കുക്കിയും ഇവിടെ എക്സ്ട്രാക്ട് ചെയ്യാം.
-        # നിലവിൽ നമ്മൾ നേരിട്ട് ഹോട്ട്സ്റ്റാർ സ്ട്രീമിലേക്ക് പ്രോക്സി സെറ്റ് ചെയ്യുന്നു:
-        target_url = "https://live09p.hotstar.com/mp2/incagbsgallow-biggboss-mal-2026/28fdd2300bf04a60ac3c3318ff009886/index_6.m3u8"
-        cookie_value = "hdntl=exp=1793746809~acl=%2f*~id=d4d0bc38da0a57b34397e630515dd242~data=hdntl~hmac=87827c67ee5afb4712a5551f0537298f8f5a50e0bb20ea1f3dfe28c25cd1a3c5"
+        # ബിഗ് ബോസ് മലയാളം (Bigboss 24/7 live-MALAYALAM) എന്ന ഭാഗം സെർച്ച് ചെയ്ത് ലിങ്ക് എടുക്കുന്നു
+        # സ്ക്രീൻഷോട്ടിൽ കണ്ടതുപോലെ മലയാലം ലിങ്കും കുക്കിയും കണ്ടെത്തുന്നു
+        target_url = None
+        cookie_value = None
         
+        lines = playlist_text.split('\n')
+        for i, line in enumerate(lines):
+            if 'Bigboss 24/7 live-MALAYALAM' in line:
+                # തൊട്ടടുത്ത വരികളിൽ കിടക്കുന്ന .m3u8 ലിങ്കും കുക്കിയും കണ്ടെത്തുക
+                for j in range(i, min(i + 15, len(lines))):
+                    if '.m3u8' in lines[j] and 'http' in lines[j]:
+                        target_url = lines[j].split('|')[0].strip()
+                    if 'hdntl=' in lines[j]:
+                        # കുക്കി വാല്യൂ എക്സ്ട്രാക്ട് ചെയ്യുന്നു
+                        match = re.search(r'(hdntl=[^&\s"]+)', lines[j])
+                        if match:
+                            cookie_value = match.group(1)
+                break
+        
+        # ഒരുവളവ് ഡിഫോൾട്ട് ലിങ്ക് കിട്ടിയില്ലെങ്കിൽ ബാക്ക്അപ്പ്
+        if not target_url:
+            target_url = "https://live09p.hotstar.com/mp2/incagbsgallow-biggboss-mal-2026/28fdd2300bf04a60ac3c3318ff009886/index_6.m3u8"
+        if not cookie_value:
+            cookie_value = "hdntl=exp=1793908046~acl=%2f*~id=5da1ebd91eed6e7e9efbbd5ed35d7506~data=hdntl~hmac=9ed9adb9d5e065f4bdcb1b36ae25cfb2a3663a6cd0fdf5e0c29719ce0935a"
+
         headers = {
             'User-Agent': 'Hotstar;in.startv.hotstar/25.02.24.8.11169@Premium Plugx(Android/15)',
             'Referer': 'https://www.hotstar.com/',
